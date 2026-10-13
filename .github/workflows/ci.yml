@@ -149,7 +149,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build gcovr
+          sudo apt-get install -y ninja-build
+          # Ubuntu 22.04's apt gcovr is 5.0, which lacks flags the coverage target uses
+          # (--merge-lines, --gcov-suspicious-hits-threshold). Pin a known-good release.
+          python3 -m pip install --user "gcovr==8.6"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Configure and build
         run: |
           cmake --preset coverage
