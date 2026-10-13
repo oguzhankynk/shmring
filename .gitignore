@@ -1,0 +1,16 @@
+build/
+build-*/
+compile_commands.json
+.cache/
+CMakeUserPresets.json
+
+*.o
+*.obj
+*.so
+*.so.*
+*.a
+*.exe
+
+.vscode/
+.idea/
+*.swp

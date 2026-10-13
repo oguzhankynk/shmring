@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "${repo_root}"
+
+mapfile -d '' staged_cpp_files < <(
+  git diff --cached --name-only --diff-filter=ACMR -z -- '*.cpp' '*.hpp'
+)
+
+if ((${#staged_cpp_files[@]} == 0)); then
+  exit 0
+fi
+
+formatter=""
+for candidate in clang-format clang-format-19 clang-format-18 clang-format-17 \
+  clang-format-16 clang-format-15 clang-format-14; do
+  if command -v "${candidate}" >/dev/null 2>&1; then
+    formatter="${candidate}"
+    break
+  fi
+done
+
+if [[ -z "${formatter}" ]]; then
+  echo "error: clang-format is required to check staged C++ files." >&2
+  echo "Install clang-format or disable this hook with:" >&2
+  echo "  git -c core.hooksPath=/dev/null commit ..." >&2
+  exit 1
+fi
+
+echo "Checking staged C++ formatting with ${formatter}..."
+"${formatter}" --dry-run --Werror -- "${staged_cpp_files[@]}"

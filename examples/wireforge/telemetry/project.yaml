@@ -1,0 +1,55 @@
+# Telemetry schema used by the telemetry_over_ring example: one interface and one message with a
+# sync/id/length header and a CRC32 trailer. Copied from the WireForge examples.
+schema_version: 1
+project: basic_telemetry
+version: "0.1.0"
+description: Minimal sensor telemetry link (rx only).
+namespace: demo::telemetry
+defaults: { endian: big, bit_order: msb_first }
+
+checksums:
+  frameCrc: { algo: crc32 }
+
+enums:
+  SensorState:
+    type: u8
+    values: { off: 0, warming: 1, ready: 2, fault: 3 }   # `off` stays a string (YAML 1.2)
+
+types:
+  Vec3:
+    description: Three-axis sample.
+    fields:
+      - { name: x, type: f32, default: 0.0 }
+      - { name: y, type: f32, default: 0.0 }
+      - { name: z, type: f32, default: 0.0 }
+
+messages:
+  SensorReading:
+    id: 0x0101
+    description: Periodic sensor sample.
+    fields:
+      - { name: sensorId, type: u8, min: 1, max: 32, default: 1 }
+      - { name: state, type: SensorState, default: ready }
+      - { name: temperature, type: f32, min: -80.0, max: 150.0, default: 20.0, units: degC }
+      - { name: accel, type: Vec3 }
+      - { name: sampleCount, type: u8, max: 4 }
+      - name: samples
+        type: u16
+        occurs: { max: 4, count: sampleCount }
+
+interfaces:
+  sensor_to_us:
+    version: "1.0.0"
+    direction: rx
+    header:
+      fields:
+        - { name: sync, type: u16, const: 0xA55A, role: sync }
+        - { name: msgId, type: u16, role: message_id }
+        - { name: length, type: u16, role: payload_length }
+    trailer:
+      fields:
+        - name: crc
+          type: u32
+          checksum: { use: frameCrc, covers: { scope: header_and_payload } }
+    framing: { kind: sync_length, max_frame_size: 64, resync: true }
+    messages: [SensorReading]

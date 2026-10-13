@@ -1,0 +1,11 @@
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  message(FATAL_ERROR "SHMRING_BUILD_FUZZERS requires Clang (libFuzzer)")
+endif()
+
+foreach(target fuzz_header fuzz_queues)
+  add_executable(${target} ${target}.cpp)
+  target_link_libraries(${target} PRIVATE shmring::shmring)
+  target_compile_options(${target} PRIVATE -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
+  target_link_options(${target} PRIVATE -fsanitize=fuzzer,address,undefined)
+  shmring_set_warnings(${target})
+endforeach()

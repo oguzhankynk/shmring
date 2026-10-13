@@ -1,0 +1,105 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "SHMRING_BUILD_TESTS": "ON",
+        "SHMRING_BUILD_EXAMPLES": "ON",
+        "SHMRING_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "description": "Plain debug build: tests and examples on, warnings as errors.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "description": "Optimized build, tests and examples on.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "ASan + UBSan",
+      "description": "Debug build instrumented with AddressSanitizer and UndefinedBehaviorSanitizer.",
+      "inherits": "debug",
+      "cacheVariables": {
+        "SHMRING_SANITIZER": "address;undefined"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "TSan",
+      "description": "Debug build instrumented with ThreadSanitizer.",
+      "inherits": "debug",
+      "cacheVariables": {
+        "SHMRING_SANITIZER": "thread"
+      }
+    },
+    {
+      "name": "coverage",
+      "displayName": "Coverage",
+      "description": "Debug build instrumented with --coverage; 'coverage' target runs ctest + gcovr.",
+      "inherits": "debug",
+      "cacheVariables": {
+        "SHMRING_ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "tidy",
+      "displayName": "clang-tidy",
+      "description": "Debug build with clang-tidy running on the shmring target.",
+      "inherits": "debug",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "SHMRING_ENABLE_CLANG_TIDY": "ON"
+      }
+    },
+    {
+      "name": "cppcheck",
+      "displayName": "cppcheck",
+      "description": "Debug build with cppcheck running on the shmring target.",
+      "inherits": "debug",
+      "cacheVariables": {
+        "SHMRING_ENABLE_CPPCHECK": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "coverage", "configurePreset": "coverage" },
+    { "name": "tidy", "configurePreset": "tidy" },
+    { "name": "cppcheck", "configurePreset": "cppcheck" }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 4, "stopOnFailure": false }
+    },
+    { "name": "debug", "configurePreset": "debug", "inherits": "base" },
+    { "name": "release", "configurePreset": "release", "inherits": "base" },
+    { "name": "asan", "configurePreset": "asan", "inherits": "base" },
+    { "name": "tsan", "configurePreset": "tsan", "inherits": "base" },
+    { "name": "coverage", "configurePreset": "coverage", "inherits": "base" },
+    { "name": "tidy", "configurePreset": "tidy", "inherits": "base" },
+    { "name": "cppcheck", "configurePreset": "cppcheck", "inherits": "base" }
+  ]
+}

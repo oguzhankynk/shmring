@@ -1,0 +1,249 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.preset }} (${{ matrix.compiler }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: debug
+            compiler: gcc
+          - preset: debug
+            compiler: clang
+          - preset: asan
+            compiler: gcc
+          - preset: tsan
+            compiler: gcc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang-14 clang-tidy-14 clang-format-14 \
+            cppcheck gcovr doxygen graphviz
+
+      - name: Select compiler
+        if: matrix.compiler == 'clang'
+        run: |
+          echo "CC=clang-14" >> "$GITHUB_ENV"
+          echo "CXX=clang++-14" >> "$GITHUB_ENV"
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+  tidy:
+    name: clang-tidy
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang-14 clang-tidy-14
+      - name: Configure and build
+        run: |
+          cmake --preset tidy
+          cmake --build --preset tidy
+
+  cppcheck:
+    name: cppcheck
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cppcheck
+      - name: Configure and build
+        run: |
+          cmake --preset cppcheck
+          cmake --build --preset cppcheck
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-14
+      - name: Check formatting
+        run: |
+          git ls-files '*.hpp' '*.cpp' \
+            | xargs clang-format-14 --dry-run --Werror
+
+  docs:
+    name: Doxygen
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build doxygen graphviz
+      - name: Check documentation coverage
+        run: |
+          cmake --preset debug
+          cmake --build --preset debug --target docs-check
+      - name: Build HTML site
+        run: cmake --build --preset debug --target docs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-html
+          path: build/debug/docs/html
+
+  install:
+    name: Install + find_package
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+      - name: Configure and build (release)
+        run: |
+          cmake --preset release
+          cmake --build --preset release
+      - name: Install
+        run: cmake --install build/release --prefix "${{ runner.temp }}/shmring-install"
+      - name: Configure, build and run a consumer project
+        run: |
+          mkdir -p "${{ runner.temp }}/shmring-consumer"
+          cat > "${{ runner.temp }}/shmring-consumer/CMakeLists.txt" <<'EOF'
+          cmake_minimum_required(VERSION 3.25)
+          project(shmring_install_check LANGUAGES CXX)
+          find_package(shmring CONFIG REQUIRED)
+          add_executable(consumer main.cpp)
+          target_link_libraries(consumer PRIVATE shmring::shmring)
+          EOF
+          cat > "${{ runner.temp }}/shmring-consumer/main.cpp" <<'EOF'
+          #include <shmring/version.hpp>
+          int main() { return shmring::version() != nullptr ? 0 : 1; }
+          EOF
+          cmake -S "${{ runner.temp }}/shmring-consumer" -B "${{ runner.temp }}/shmring-consumer/build" \
+            -G Ninja -DCMAKE_PREFIX_PATH="${{ runner.temp }}/shmring-install"
+          cmake --build "${{ runner.temp }}/shmring-consumer/build"
+          "${{ runner.temp }}/shmring-consumer/build/consumer"
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build gcovr
+      - name: Configure and build
+        run: |
+          cmake --preset coverage
+          cmake --build --preset coverage --target coverage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: build/coverage/coverage
+
+  fuzz:
+    name: Fuzz header validation and queues
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build clang-14
+      - name: Build the fuzzer
+        run: |
+          CXX=clang++-14 cmake -S . -B build/fuzz -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DSHMRING_BUILD_FUZZERS=ON -DSHMRING_BUILD_TESTS=OFF -DSHMRING_BUILD_DOCS=OFF
+          cmake --build build/fuzz
+      - name: Run for one minute
+        run: |
+          mkdir -p build/fuzz/corpus_header build/fuzz/corpus_queues
+          # clang-14's AddressSanitizer crashes at start-up on kernels with high ASLR entropy;
+          # turning address randomization off avoids that.
+          setarch -R ./build/fuzz/fuzz/fuzz_header -max_total_time=60 -max_len=512 build/fuzz/corpus_header
+          setarch -R ./build/fuzz/fuzz/fuzz_queues -max_total_time=60 -max_len=600 build/fuzz/corpus_queues
+
+  benchmarks:
+    name: Benchmarks build and smoke run
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libboost-dev
+      - name: Build
+        run: |
+          cmake -S . -B build/bench -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DSHMRING_BUILD_BENCHMARKS=ON -DSHMRING_BUILD_TESTS=OFF -DSHMRING_BUILD_DOCS=OFF
+          cmake --build build/bench
+      - name: Smoke run (tiny sample counts, no CPU pinning)
+        env:
+          BENCH_CPU_A: "-1"
+          BENCH_CPU_B: "-1"
+          BENCH_ITERATIONS: "2000"
+          BENCH_WARMUP: "200"
+          BENCH_REPETITIONS: "1"
+          BENCH_MESSAGES: "20000"
+        run: |
+          ./build/bench/bench/shmring_pingpong
+          BENCH_FILTER="shmring" ./build/bench/bench/shmring_throughput
+          ./build/bench/bench/shmring_micro --benchmark_min_time=0.01s
+
+  examples:
+    name: Quick start runs as written
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+      - name: Build
+        run: |
+          cmake --preset release
+          cmake --build --preset release
+      - name: Run the two-process quick start
+        run: |
+          ./build/release/examples/quickstart_producer &
+          sleep 1
+          ./build/release/examples/quickstart_consumer
+          wait
+      - name: Run the message ring demo
+        run: ./build/release/examples/message_ring_demo
+
+  aarch64:
+    name: AArch64 (cross-compiled, run under QEMU)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build g++-aarch64-linux-gnu qemu-user
+      - name: Configure and build
+        run: |
+          cmake -S . -B build/aarch64 -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/aarch64-linux-gnu.cmake \
+            -DSHMRING_BUILD_DOCS=OFF
+          cmake --build build/aarch64
+      - name: Test
+        run: ctest --test-dir build/aarch64 --output-on-failure

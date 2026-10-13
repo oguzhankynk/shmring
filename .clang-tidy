@@ -1,0 +1,58 @@
+---
+# clang-tidy. Only CXX_CLANG_TIDY'd targets are 'shmring' and its library
+# target (cmake/ClangTidy.cmake), so this applies to include/ and src/ only.
+#
+# NOTE: `Checks:` below is a single YAML block scalar (`>`), so every line in
+# it is literal content of that string, INCLUDING lines starting with '#' —
+# real YAML comments documenting individual exclusions must go here, above
+# the key, not inside the block.
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -modernize-use-trailing-return-type,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -readability-identifier-length,
+  -misc-non-private-member-variables-in-classes,
+  -cert-err58-cpp
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*/(include/shmring|src)/.*'
+FormatStyle: file
+InheritParentConfig: false
+
+CheckOptions:
+  - key: readability-identifier-naming.ClassCase
+    value: lower_case
+  - key: readability-identifier-naming.StructCase
+    value: lower_case
+  - key: readability-identifier-naming.TemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ProtectedMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.EnumCase
+    value: lower_case
+  - key: readability-identifier-naming.EnumConstantCase
+    value: lower_case
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: lower_case
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: lower_case
+  - key: cppcoreguidelines-avoid-do-while.IgnoreMacros
+    value: true

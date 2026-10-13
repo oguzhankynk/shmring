@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "${repo_root}"
+
+echo "Configuring the debug preset..."
+cmake --preset debug
+
+echo "Building the debug preset..."
+cmake --build --preset debug
+
+echo "Running the debug test suite..."
+ctest --preset debug --output-on-failure
