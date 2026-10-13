@@ -417,15 +417,40 @@ void limit(int resource, rlim_t value) {
 
 // Allows this process only `headroom` more bytes of address space than it uses now. A fixed small
 // limit would also starve the allocators of the sanitizers, which reserve a lot of address space.
-void limit_address_space_to_current_plus(std::size_t headroom) {
+// Returns whether the limit is actually in force.
+bool limit_address_space_to_current_plus(std::size_t headroom) {
   std::ifstream status("/proc/self/status");
   std::string line;
   while (std::getline(status, line)) {
     if (line.rfind("VmSize:", 0) == 0) {
       const std::size_t used_kib = std::stoul(line.substr(7));
-      limit(RLIMIT_AS, static_cast<rlim_t>(used_kib) * 1024 + headroom);
+      const rlim_t wanted = static_cast<rlim_t>(used_kib) * 1024 + headroom;
+      limit(RLIMIT_AS, wanted);
+      rlimit in_force{};
+      return ::getrlimit(RLIMIT_AS, &in_force) == 0 && in_force.rlim_cur == wanted;
+    }
+  }
+  return false;
+}
+
+// Fills the process's mapping table (vm.max_map_count) with one-page mappings so that every later
+// mmap fails with ENOMEM. Neighbours alternate protection so the kernel cannot merge them. The cap
+// only guards against a huge max_map_count; if it is reached, the caller's expectation fails.
+void exhaust_mapping_count() {
+  const auto page = static_cast<std::size_t>(::sysconf(_SC_PAGESIZE));
+  for (int i = 0; i < (1 << 22); ++i) {
+    const int prot = (i % 2 == 0) ? PROT_NONE : PROT_READ;
+    if (::mmap(nullptr, page, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0) == MAP_FAILED) {
       return;
     }
+  }
+}
+
+// Makes a large new mapping in this process fail. QEMU user-mode emulation (the AArch64 CI job)
+// accepts setrlimit(RLIMIT_AS) but never applies it; there, exhaust the mapping table instead.
+void make_large_mappings_fail() {
+  if (!limit_address_space_to_current_plus(32ULL << 20)) {
+    exhaust_mapping_count();
   }
 }
 
@@ -447,7 +472,7 @@ TEST(SegmentFailureTest, CreateReportsAFileThatCannotBeSized) {
 TEST(SegmentFailureTest, CreateReportsAMappingThatCannotBeMade) {
   const name_cleanup name(unique_name("map"));
   const int code = run_in_child([&] {
-    limit_address_space_to_current_plus(32ULL << 20);
+    make_large_mappings_fail();
     auto created =
         segment::create(name.name(), {queue_kind::spsc_ring, 8, 8, std::uint64_t{1} << 24});
     if (created.has_value() || created.error().code != errc::system_error) {
@@ -465,7 +490,7 @@ TEST(SegmentFailureTest, OpenReportsAMappingThatCannotBeMade) {
   ASSERT_TRUE(created.has_value());
   created.value().publish();
   const int code = run_in_child([&] {
-    limit_address_space_to_current_plus(32ULL << 20);
+    make_large_mappings_fail();
     auto opened = segment::open(name.name(), big);
     return (!opened.has_value() && opened.error().code == errc::system_error) ? 0 : 1;
   });
